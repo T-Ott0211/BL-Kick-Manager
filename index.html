@@ -1165,7 +1165,7 @@ async function initDb() {
   await ensureSeeded(false);
 }
 
-async function handleLogin(name, pin, adminOnly) {
+async function handleLogin(name, pin) {
   name = (name || "").trim();
   pin = (pin || "").trim();
   if (!name) { showToast("Bitte Namen eingeben"); return; }
@@ -1186,12 +1186,12 @@ async function handleLogin(name, pin, adminOnly) {
       render();
     } else {
       const id = uid();
-      await db.doc("managers/" + id).set({name, pin, createdAt: Date.now(), isAdmin: !!adminOnly});
+      await db.doc("managers/" + id).set({name, pin, createdAt: Date.now()});
       state.managerId = id;
       state.managerName = name;
       localStorage.setItem("bl_manager_id", id);
       localStorage.setItem("bl_manager_name", name);
-      showToast(adminOnly ? "Verwaltungs-Konto angelegt, " + name + "! 🛠️" : "Konto angelegt, willkommen " + name + "! ⚽");
+      showToast("Konto angelegt, willkommen " + name + "! ⚽");
       render();
     }
   } catch (err) {
@@ -1761,10 +1761,6 @@ function renderSetup() {
       <p>Eure private Liga. Kader bauen, Transfers tätigen, Punkte sammeln, Freunde schlagen.</p>
       <input type="text" id="nameInput" placeholder="Dein Manager-Name" maxlength="20" autocomplete="off">
       <input type="password" id="pinInput" placeholder="4-stelliger PIN" maxlength="4" inputmode="numeric" pattern="[0-9]*">
-      <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px; color:var(--text-dim,#9aa4b2); cursor:pointer;">
-        <input type="checkbox" id="adminOnlyCheckbox" style="width:16px; height:16px;">
-        Nur Verwaltung – ich spiele nicht mit (zählt nicht in Tabelle/Manager-Anzahl)
-      </label>
       <button class="btn-buy" id="startBtn" style="margin-top:4px;">Anmelden</button>
       <div class="hint" style="margin-top:16px; max-width:300px;">Neuer Name → neues Konto wird mit diesem PIN angelegt.<br>Schon dabei? Gleicher Name + PIN loggt dich ein.</div>
       <div style="margin-top:22px; border-top:1px solid var(--border,#262c3a); padding-top:14px; width:100%; max-width:300px;">
@@ -1783,8 +1779,7 @@ function attachSetupEvents() {
   if (btn) btn.onclick = () => {
     const name = document.getElementById("nameInput").value;
     const pin = document.getElementById("pinInput").value;
-    const adminOnly = document.getElementById("adminOnlyCheckbox").checked;
-    handleLogin(name, pin, adminOnly);
+    handleLogin(name, pin);
   };
   const showLink = document.getElementById("showRecoveryLink");
   if (showLink) showLink.onclick = (e) => {
@@ -1831,7 +1826,7 @@ function renderMain() {
   return `
     <header>
       <h1>⚽ Bundesliga <span class="gold-word">Manager</span> <span class="live-dot" title="Live"></span></h1>
-      <div class="sub">Hey ${state.managerName} · ${Object.values(state.managers).filter(m => !m.isAdmin).length} Manager in der Liga</div>
+      <div class="sub">Hey ${state.managerName} · ${Object.keys(state.managers).length} Manager in der Liga</div>
     </header>
     <div class="container">
       ${renderSeedProgress()}
@@ -2149,7 +2144,7 @@ function renderMarkt() {
 }
 
 function renderTabelle() {
-  const mgrs = Object.entries(state.managers).filter(([id, m]) => !m.isAdmin).map(([id, m]) => {
+  const mgrs = Object.entries(state.managers).map(([id, m]) => {
     const score = computeManagerScore(id);
     return {id, name: m.name, points: score.total, squadSize: score.squadSize, value: score.squadValue, eligible: score.eligible};
   }).sort((a,b) => b.points - a.points);
@@ -2179,7 +2174,7 @@ function renderAdmin() {
   return `
     <div class="panel">
       <h2>👤 Konto</h2>
-      <div class="hint">Angemeldet als <strong>${state.managerName}</strong>${state.managers[state.managerId]?.isAdmin ? ' · 🛠️ Verwaltung (spielt nicht mit)' : ''}${isHost() ? ' · 👑 Host' : ''}</div>
+      <div class="hint">Angemeldet als <strong>${state.managerName}</strong>${isHost() ? ' · 👑 Host' : ''}</div>
       <button class="btn-sell" id="logoutBtn" style="margin-top:10px; width:auto; padding:9px 16px;">Abmelden</button>
     </div>
     ${isHost() && !localStorage.getItem("bl_recovery_set") ? `
