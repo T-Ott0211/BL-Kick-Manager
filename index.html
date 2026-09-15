@@ -935,6 +935,7 @@ let state = {
   offers: {},
   tab: "kader",
   filter: "ALLE",
+  clubFilter: "ALLE",
   formation: localStorage.getItem("bl_formation") || "4-4-2",
   lineupMode: localStorage.getItem("bl_lineup_mode") || "auto",
   kaderVerwaltenOpen: false,
@@ -2080,7 +2081,9 @@ function incomingOffersHtml(p) {
 function renderMarkt() {
   const filters = ["ALLE","TW","ABW","MF","ST"];
   const available = Object.values(state.players).filter(p => !p.ownerId || (p.listed && p.ownerId !== state.managerId));
-  const filtered = state.filter === "ALLE" ? available : available.filter(p => p.pos === state.filter);
+  const clubs = [...new Set(Object.values(state.players).map(p => p.club))].sort((a,b) => a.localeCompare(b, "de"));
+  let filtered = state.filter === "ALLE" ? available : available.filter(p => p.pos === state.filter);
+  if (state.clubFilter && state.clubFilter !== "ALLE") filtered = filtered.filter(p => p.club === state.clubFilter);
   const used = myBudgetUsed();
   const remaining = BUDGET_TOTAL - used;
   return `
@@ -2092,6 +2095,10 @@ function renderMarkt() {
       <div class="filter-row">
         ${filters.map(f => `<div class="filter-chip ${state.filter===f?'active':''}" data-filter="${f}">${f}</div>`).join("")}
       </div>
+      <select id="clubFilterSelect" style="margin-top:10px; width:100%; padding:9px 10px; background:var(--bg-panel-2,#161b26); color:#fff; border:1px solid var(--border,#262c3a); border-radius:8px; font-size:14px;">
+        <option value="ALLE" ${(!state.clubFilter || state.clubFilter==="ALLE")?'selected':''}>⚽ Alle Vereine</option>
+        ${clubs.map(c => `<option value="${c}" ${state.clubFilter===c?'selected':''}>${c}</option>`).join("")}
+      </select>
       ${available.length === 0 ? `
         <div class="empty-state">
           <div class="icon">📡</div>
@@ -2224,6 +2231,8 @@ function attachMainEvents() {
   document.querySelectorAll("[data-counter-accept]").forEach(el => { el.onclick = () => respondToCounter(el.dataset.counterAccept, "accept"); });
   document.querySelectorAll("[data-counter-reject]").forEach(el => { el.onclick = () => respondToCounter(el.dataset.counterReject, "reject"); });
   document.querySelectorAll("[data-filter]").forEach(el => { el.onclick = () => { state.filter = el.dataset.filter; render(); }; });
+  const clubFilterSelect = document.getElementById("clubFilterSelect");
+  if (clubFilterSelect) clubFilterSelect.onchange = () => { state.clubFilter = clubFilterSelect.value; render(); };
   document.querySelectorAll("[data-formation]").forEach(el => { el.onclick = () => setFormation(el.dataset.formation); });
   document.querySelectorAll("[data-mode]").forEach(el => { el.onclick = () => setLineupMode(el.dataset.mode); });
   document.querySelectorAll("[data-toggle-start]").forEach(el => { el.onclick = () => toggleStarter(el.dataset.toggleStart); });
