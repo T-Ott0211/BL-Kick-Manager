@@ -1767,6 +1767,13 @@ function renderSetup() {
       </label>
       <button class="btn-buy" id="startBtn" style="margin-top:4px;">Anmelden</button>
       <div class="hint" style="margin-top:16px; max-width:300px;">Neuer Name → neues Konto wird mit diesem PIN angelegt.<br>Schon dabei? Gleicher Name + PIN loggt dich ein.</div>
+      <div style="margin-top:22px; border-top:1px solid var(--border,#262c3a); padding-top:14px; width:100%; max-width:300px;">
+        <a href="#" id="showRecoveryLink" style="color:var(--text-dim,#9aa4b2); font-size:12.5px; text-decoration:underline;">🔑 Host-Zugriff verloren? Hier wiederherstellen</a>
+        <div id="recoveryBox" style="display:${state.showRecoveryForm ? 'block' : 'none'}; margin-top:10px;">
+          <input type="password" id="recoveryCodeInput" placeholder="Sicherheits-Code" style="width:100%;">
+          <button class="btn-buy" id="recoveryClaimBtn" style="margin-top:8px; width:auto; padding:8px 16px; font-size:13px;">Wiederherstellen</button>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -1778,6 +1785,28 @@ function attachSetupEvents() {
     const pin = document.getElementById("pinInput").value;
     const adminOnly = document.getElementById("adminOnlyCheckbox").checked;
     handleLogin(name, pin, adminOnly);
+  };
+  const showLink = document.getElementById("showRecoveryLink");
+  if (showLink) showLink.onclick = (e) => {
+    e.preventDefault();
+    state.showRecoveryForm = !state.showRecoveryForm;
+    render();
+  };
+  const claimBtn = document.getElementById("recoveryClaimBtn");
+  if (claimBtn) claimBtn.onclick = async () => {
+    const code = (document.getElementById("recoveryCodeInput").value || "").trim();
+    if (!code) { showToast("Bitte Code eingeben"); return; }
+    if (!db || !auth || !auth.currentUser) { showToast("Datenbank noch nicht bereit"); return; }
+    try {
+      await db.doc("claims/" + auth.currentUser.uid).set({code});
+      await db.doc("meta/host").set({authUid: auth.currentUser.uid, at: Date.now()}, {merge: true});
+      state.showRecoveryForm = false;
+      showToast("Host-Status wiederhergestellt! 👑");
+      render();
+    } catch (err) {
+      console.error("Host-Recovery fehlgeschlagen:", err);
+      showToast("Falscher Code ❌");
+    }
   };
 }
 
@@ -2095,7 +2124,7 @@ function renderMarkt() {
       <div class="filter-row">
         ${filters.map(f => `<div class="filter-chip ${state.filter===f?'active':''}" data-filter="${f}">${f}</div>`).join("")}
       </div>
-      <select id="clubFilterSelect" style="margin-top:10px; width:100%; padding:9px 10px; background:var(--bg-panel-2,#161b26); color:#fff; border:1px solid var(--border,#262c3a); border-radius:8px; font-size:14px;">
+      <select id="clubFilterSelect" style="margin:14px 0 16px; width:100%; padding:11px 12px; background:var(--bg-panel-2,#161b26); color:#fff; border:1px solid var(--border,#262c3a); border-radius:8px; font-size:14px;">
         <option value="ALLE" ${(!state.clubFilter || state.clubFilter==="ALLE")?'selected':''}>⚽ Alle Vereine</option>
         ${clubs.map(c => `<option value="${c}" ${state.clubFilter===c?'selected':''}>${c}</option>`).join("")}
       </select>
@@ -2153,6 +2182,14 @@ function renderAdmin() {
       <div class="hint">Angemeldet als <strong>${state.managerName}</strong>${state.managers[state.managerId]?.isAdmin ? ' · 🛠️ Verwaltung (spielt nicht mit)' : ''}${isHost() ? ' · 👑 Host' : ''}</div>
       <button class="btn-sell" id="logoutBtn" style="margin-top:10px; width:auto; padding:9px 16px;">Abmelden</button>
     </div>
+    ${isHost() && !localStorage.getItem("bl_recovery_set") ? `
+    <div class="panel" style="border-color: var(--gold);">
+      <h2>🔑 Sicherheits-Code festlegen</h2>
+      <div class="hint">Falls du deinen Host-Zugriff mal verlierst (Browser-Cache gelöscht, neues Gerät), kommst du damit selbst wieder rein, ohne Firebase-Console-Gefrickel. <strong>Wird nirgends gespeichert wo man ihn auslesen könnte</strong> – merk ihn dir gut, es gibt keine "Code vergessen"-Funktion.</div>
+      <input type="password" id="setRecoveryCodeInput" placeholder="Neuer Sicherheits-Code (mind. 6 Zeichen)" style="margin-top:10px;">
+      <button class="btn-buy" id="setRecoveryCodeBtn" style="margin-top:8px; width:auto; padding:9px 16px;">Code festlegen</button>
+    </div>
+    ` : ""}
     <div class="panel">
       <h2>⏱ Spieltag-Deadline</h2>
       <div class="hint">Vor dem ersten Anpfiff sperren sich Formation, Manuell/Auto-Wahl und Kapitän für alle. Nur der Host darf die Deadline ändern.</div>
@@ -2259,6 +2296,24 @@ function attachMainEvents() {
   document.querySelectorAll("[data-dnp]").forEach(el => { el.onchange = () => setDidNotPlay(el.dataset.dnp, el.checked); });
   const logoutBtn = document.getElementById("logoutBtn");
   if (logoutBtn) logoutBtn.onclick = () => logout();
+
+  const setRecoveryCodeBtn = document.getElementById("setRecoveryCodeBtn");
+  if (setRecoveryCodeBtn) setRecoveryCodeBtn.onclick = async () => {
+    const code = (document.getElementById("setRecoveryCodeInput").value || "").trim();
+    if (code.length < 6) { showToast("Mindestens 6 Zeichen bitte"); return; }
+    if (!db) { showToast("Datenbank nicht bereit"); return; }
+    try {
+      await db.doc("meta/hostRecovery").set({code});
+      localStorage.setItem("bl_recovery_set", "1");
+      showToast("Sicherheits-Code gespeichert! Gut aufbewahren 🔑");
+      render();
+    } catch (err) {
+      // Bereits gesetzt (Rules verbieten Überschreiben) oder anderer Fehler
+      localStorage.setItem("bl_recovery_set", "1");
+      showToast("Es ist bereits ein Code gesetzt, ändern geht aus Sicherheitsgründen nicht.");
+      render();
+    }
+  };
   const resetBtn = document.getElementById("resetBtn");
   if (resetBtn) resetBtn.onclick = () => resetLeague();
   const refreshDataBtn = document.getElementById("refreshDataBtn");
