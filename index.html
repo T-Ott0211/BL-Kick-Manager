@@ -513,6 +513,7 @@ let auth = null;
 let state = {
   managerId: localStorage.getItem("bl_manager_id") || null,
   managerName: localStorage.getItem("bl_manager_name") || null,
+  hostAuthUid: null,
   players: {},
   managers: {},
   league: {},
@@ -651,6 +652,16 @@ async function ensureSeeded(force) {
   } catch (err) {
     console.error("league/config check failed:", err);
   }
+
+  // Host-Claim: nur setzen, falls noch keiner existiert. Rules verbieten das Überschreiben danach.
+  try {
+    const hostSnap = await db.doc("meta/host").get();
+    if (!hostSnap || !hostSnap.exists) {
+      await db.doc("meta/host").set({authUid: auth.currentUser.uid, at: Date.now()});
+    }
+  } catch (err) {
+    console.error("meta/host claim failed:", err);
+  }
   render();
 }
 
@@ -711,6 +722,13 @@ async function initDb() {
     console.error("offers onSnapshot error:", err);
   });
 
+  db.doc("meta/host").onSnapshot((doc) => {
+    state.hostAuthUid = (doc && doc.exists && doc.data()) ? doc.data().authUid : null;
+    render();
+  }, (err) => {
+    console.error("meta/host onSnapshot error:", err);
+  });
+
   render();
   await ensureSeeded(false);
 }
@@ -759,6 +777,7 @@ function logout() {
 }
 
 async function refreshPlayerData() {
+  if (!isHost()) { showToast("Nur der Host darf die Spielerdaten aktualisieren 🔒"); return; }
   if (!db) { showToast("Datenbank nicht bereit"); return; }
   showToast("Aktualisiere Spielerdaten...");
   const results = await Promise.allSettled(
@@ -772,6 +791,7 @@ async function refreshPlayerData() {
 }
 
 async function resetLeague() {
+  if (!isHost()) { showToast("Nur der Host darf die Liga zurücksetzen 🔒"); return; }
   if (!state.resetConfirm) {
     state.resetConfirm = true;
     render();
@@ -901,13 +921,13 @@ function computeManagerScore(managerId) {
 function myPoints() { return computeManagerScore(state.managerId).total; }
 function myCaptainId() { return (state.managers[state.managerId] && state.managers[state.managerId].captainId) || null; }
 
-function hostId() {
-  const entries = Object.entries(state.managers || {});
-  if (entries.length === 0) return null;
-  entries.sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
-  return entries[0][0];
+// Host = die Firebase-Auth-Session (Browser), die die Liga als Erste angelegt hat.
+// Bewusst NICHT an den Manager-Namen/PIN gebunden, denn das ist clientseitig fälschbar.
+// meta/host.authUid wird einmalig beim allerersten Laden der frischen Liga gesetzt
+// und ist laut Firestore Rules danach unveränderlich.
+function isHost() {
+  return !!(auth && auth.currentUser && state.hostAuthUid && auth.currentUser.uid === state.hostAuthUid);
 }
-function isHost() { return state.managerId && hostId() === state.managerId; }
 
 async function buyPlayer(id) {
   const p = state.players[id];
@@ -1684,7 +1704,7 @@ function renderAdmin() {
     </div>
     <div class="panel">
       <h2>⏱ Spieltag-Deadline</h2>
-      <div class="hint">Vor dem ersten Anpfiff sperren sich Formation, Manuell/Auto-Wahl und Kapitän für alle. Nur der Host (${state.managers[hostId()]?.name || '?'}) darf die Deadline ändern.</div>
+      <div class="hint">Vor dem ersten Anpfiff sperren sich Formation, Manuell/Auto-Wahl und Kapitän für alle. Nur der Host darf die Deadline ändern.</div>
       ${renderDeadlineBanner()}
       ${isHost() ? `
         <div class="hint" style="margin-top:12px; margin-bottom:8px;">📅 Nächster bekannter Anstoß laut Spielplan:</div>
@@ -1715,6 +1735,7 @@ function renderAdmin() {
         </div>
       `).join("")}
     </div>
+    ${isHost() ? `
     <div class="panel">
       <h2>🔄 Spielerdaten aktualisieren</h2>
       <div class="hint">Für kleine Korrekturen (ein Name/Klub stimmt nicht mehr). Gleicht Namen, Klubs und Marktwerte ab, Käufe und Punkte bleiben erhalten. Für einen kompletten Spieler-Datenbank-Neuaufbau (IDs wurden neu gemischt) bitte stattdessen unten "Liga zurücksetzen" nutzen.</div>
@@ -1725,6 +1746,12 @@ function renderAdmin() {
       <div class="hint">Löscht ALLE Manager-Konten UND die komplette Spieler-Datenbank, baut sie danach frisch aus der aktuellen Kader-Liste wieder auf. Nicht rückgängig zu machen. Nutzt das jetzt einmal, um auf die korrigierte 18-Klub-Liste (Stand bundesliga.com) zu wechseln.</div>
       <button class="btn-sell" id="resetBtn" style="margin-top:10px; width:auto; padding:9px 16px;">${state.resetConfirm ? '⚠️ Wirklich? Nochmal tippen' : '🧹 Liga zurücksetzen'}</button>
     </div>
+    ` : `
+    <div class="panel">
+      <h2>🔒 Admin-Funktionen</h2>
+      <div class="hint">Spielerdaten aktualisieren und Liga zurücksetzen sind dem Host vorbehalten.</div>
+    </div>
+    `}
   `;
 }
 
@@ -1759,6 +1786,7 @@ function attachMainEvents() {
   document.querySelectorAll("[data-captain]").forEach(el => { el.onclick = (e) => { e.stopPropagation(); setCaptain(el.dataset.captain); }; });
   const reseedBtn = document.getElementById("reseedBtn");
   if (reseedBtn) reseedBtn.onclick = async () => {
+    if (!isHost()) { showToast("Nur der Host kann die Spielerdaten laden, frag ihn kurz 🔒"); return; }
     reseedBtn.textContent = "Lädt...";
     try {
       if (!db) { showToast("Datenbank noch nicht bereit, kurz warten und nochmal versuchen ⏳"); reseedBtn.textContent = "🔄 Spielerdaten laden"; return; }
