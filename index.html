@@ -667,16 +667,6 @@ async function ensureSeeded(force) {
   } catch (err) {
     console.error("league/config check failed:", err);
   }
-
-  // Host-Claim: nur setzen, falls noch keiner existiert. Rules verbieten das Überschreiben danach.
-  try {
-    const hostSnap = await db.doc("meta/host").get();
-    if (!hostSnap || !hostSnap.exists) {
-      await db.doc("meta/host").set({authUid: auth.currentUser.uid, at: Date.now()});
-    }
-  } catch (err) {
-    console.error("meta/host claim failed:", err);
-  }
   render();
 }
 
@@ -691,6 +681,17 @@ async function initDb() {
     showToast("Datenbank-Verbindung fehlgeschlagen: " + (err && err.message ? err.message : "unbekannt"));
     render();
     return;
+  }
+
+  // Host-Claim: läuft bei JEDEM Laden, unabhängig vom Seed-Status. Nur setzen, falls noch
+  // keiner existiert; Firestore Rules verbieten das Überschreiben danach.
+  try {
+    const hostSnap = await db.doc("meta/host").get();
+    if (!hostSnap || !hostSnap.exists) {
+      await db.doc("meta/host").set({authUid: auth.currentUser.uid, at: Date.now()});
+    }
+  } catch (err) {
+    console.error("meta/host claim failed:", err);
   }
 
   // Live-Zuhören zuerst registrieren, damit die UI in jedem Fall aktuelle Daten bekommt,
