@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           curl -s "https://v3.football.api-sports.io/teams?league=78&season=2026" \
-            -H "x-apisports-key: ${{ secrets.API_FOOTBALL_KEY }}" \
+            -H "x-apisports-key: ${{ secrets.API_FOOTBALL_KEY }}"
             | node -e "
               let data = '';
               process.stdin.on('data', c => data += c);
